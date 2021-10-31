@@ -31,6 +31,11 @@ roslaunch hockey_shot hockey_shot.launch
 roslaunch hockey_shot hockey_shot_bags.launch
 ```
 
++ If you chose the bag file launch file, ran the bag with this
+
+```
+rosbag play --clock solid_mix_best.bag -l
+```
 
 ## Notes/ToDo
 
