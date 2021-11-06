@@ -25,8 +25,11 @@
 #include <pcl/filters/filter_indices.h> // for pcl::removeNaNFromPointCloud
 #include <pcl/segmentation/region_growing_rgb.h>
 #include <pcl/filters/uniform_sampling.h>
+#include <pcl/features/normal_3d.h>
 
-#include <tf2_msgs/TFMessage.h>
+//#include <tf2_msgs/TFMessage.h>
+#include <geometry_msgs/PoseArray.h>  // Visualize vectors
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 // Namespace matches ROS package name
 namespace hockey_shot{
@@ -47,7 +50,7 @@ namespace hockey_shot{
     void recvCameraRGB(const sensor_msgs::ImageConstPtr& msg);  
     void recvCameraDepth(const sensor_msgs::ImageConstPtr& msg);
 
-    void recvTF(const sensor_msgs::CameraInfoConstPtr& msg);  
+    //void recvTF(const sensor_msgs::CameraInfoConstPtr& msg);  
 
     // These are unused currently
     void TimerCallback(const ros::TimerEvent& event); 
@@ -73,9 +76,13 @@ namespace hockey_shot{
     ros::Publisher pub_cloud_;
     ros::Publisher pub_passthrough_cloud_;
     ros::Publisher pub_bbox_;
+    ros::Publisher pub_normals_;  // Normal vectors
 
     // KD search tree object for use by PCL functions
     pcl::search::Search<pcl::PointXYZRGB>::Ptr kd_tree_;
+
+    // Output messages
+    geometry_msgs::PoseArray normals_;
 
     // Publishing bounding box message
     avs_lecture_msgs::TrackedObjectArray bbox_array_;

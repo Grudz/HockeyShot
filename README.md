@@ -45,4 +45,6 @@ rosbag play --clock solid_mix_best.bag -l
 
 + In rviz, you can select whether or not the pointcloud is overlayed on the camera output
 
++ Link to RGB field info PCL: https://answers.ros.org/question/57943/how-to-get-at-the-rgb-values-within-a-pclpointxyzrgb-cloud/ 
+
 + Rtab SLAM: https://www.hackster.io/dmitrywat/rgb-d-slam-with-kinect-on-raspberry-pi-4-ros-melodic-ace795 (source git = https://github.com/introlab/rtabmap/wiki/Tools#database-viewer)

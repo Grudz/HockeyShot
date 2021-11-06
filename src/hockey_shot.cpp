@@ -28,6 +28,7 @@ HockeyShot::HockeyShot(ros::NodeHandle n, ros::NodeHandle pn) : kd_tree_(new pcl
   pub_cloud_= n.advertise<sensor_msgs::PointCloud2>("filtered_cloud", 1);
   pub_passthrough_cloud_= n.advertise<sensor_msgs::PointCloud2>("passthrough_cloud", 1);
   pub_bbox_= n.advertise<avs_lecture_msgs::TrackedObjectArray>("bounding_boxes", 1);
+  pub_normals_ = n.advertise<geometry_msgs::PoseArray>("normals", 1);
 
 }  
 
@@ -39,6 +40,7 @@ HockeyShot::HockeyShot(ros::NodeHandle n, ros::NodeHandle pn) : kd_tree_(new pcl
     // Create pointer to PCL type variable
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_in(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr passthrough_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr color_filter_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_out(new pcl::PointCloud<pcl::PointXYZRGB>);
     
     pcl::fromROSMsg(*msg, *cloud_in); 
@@ -79,6 +81,24 @@ HockeyShot::HockeyShot(ros::NodeHandle n, ros::NodeHandle pn) : kd_tree_(new pcl
     passthrough_filter.setFilterLimits(cfg_.z_min, cfg_.z_max);
     passthrough_filter.filter(*passthrough_cloud);  
 
+    pcl::PointXYZRGB point;
+   // ROS_WARN("Frame id = %s", passthrough_cloud->header.frame_id.c_str());
+    for(auto& point : passthrough_cloud->points)
+    {
+      
+      if (((int)point.r < cfg_.red) && ((int)point.b < cfg_.blue) && ((int)point.g < cfg_.green) && (double)point.z < cfg_.point_distance) 
+      {
+        ROS_WARN("Frame id = %s", passthrough_cloud->header.frame_id.c_str());
+        std::cout << "X Distance = " << (double)point.x << std::endl;
+        std::cout << "Y Distance = " << (double)point.y << std::endl;
+        std::cout << "Z Distance = " << (double)point.z << std::endl;
+        std::cout << "Red = " << (int)point.r << std::endl;
+        std::cout << "Green = " << (int)point.g << std::endl;
+        std::cout << "Blue = " << (int)point.b << std::endl;
+        color_filter_cloud->push_back(point);
+      }
+    }
+/*
     // Copy filtered data into a ROS message
     sensor_msgs::PointCloud2 pass_cloud;
     pcl::toROSMsg(*passthrough_cloud, pass_cloud);
@@ -89,6 +109,80 @@ HockeyShot::HockeyShot(ros::NodeHandle n, ros::NodeHandle pn) : kd_tree_(new pcl
     pub_passthrough_cloud_.publish(pass_cloud);
  
     ROS_WARN("Pass cloud size= %d", (int)passthrough_cloud->size());
+    
+*/
+
+    // Copy filtered data into a ROS message
+    sensor_msgs::PointCloud2 color_cloud;
+    pcl::toROSMsg(*color_filter_cloud, color_cloud);
+
+    color_cloud.header = msg->header;
+
+    // Publish Passthrough filter PointCloud
+    pub_passthrough_cloud_.publish(color_cloud);
+ 
+    ROS_WARN("Pass cloud size= %d", (int)color_filter_cloud->size());
+
+    // Compute normal vectors for the incoming point cloud, this is computational, so filter first
+    pcl::PointCloud <pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud <pcl::Normal>);  // Create new cloud but type is normal not XYZ
+    pcl::NormalEstimation<pcl::PointXYZRGB, pcl::Normal> normal_estimator;  // Input PC XYZ, output Normal
+    kd_tree_->setInputCloud(passthrough_cloud);  // Sort filtered cloud with KD tree to correspond with 3D position (sorts array)
+    normal_estimator.setSearchMethod(kd_tree_);  // Use this ^^
+    normal_estimator.setInputCloud(passthrough_cloud);  // Input cloud to process (filtered from previous stage)
+    normal_estimator.setKSearch(cfg_.num_normal_neighbors);  // For each point, search for this many nearby ones. It fits them to plane equations then uses cross product to find normal
+    normal_estimator.compute(*cloud_normals);  // (Cross product for normals)
+
+    // TODO: Filter out normals here? Process them?
+    pcl::PointIndices normals;  
+    for (int i = 0; i < cloud_normals->points.size(); i++) {  // Loop over cloud normals
+      normals.indices.push_back(i);  // Only push back non-vertical normals
+    }
+
+    // Copy non-vertical normals into a separate cloud
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr normal_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);  // Create another PC
+    pcl::copyPointCloud(*passthrough_cloud, normals, *normal_cloud);  // (filtered output, non_vertical PC, stored in no ground cloud)
+
+        // Populate PoseArray message to visualize normals
+    normals_.header = pcl_conversions::fromPCL(passthrough_cloud->header);
+    normals_.poses.clear();
+    for (int i = 0; i < normals.indices.size(); i++) {
+      geometry_msgs::Pose p;
+      p.position.x = passthrough_cloud->points[normals.indices[i]].x;
+      p.position.y = passthrough_cloud->points[normals.indices[i]].y;
+      p.position.z = passthrough_cloud->points[normals.indices[i]].z;     
+
+      double nx = cloud_normals->points[normals.indices[i]].normal_x;
+      double ny = cloud_normals->points[normals.indices[i]].normal_y;
+      double nz = cloud_normals->points[normals.indices[i]].normal_z;
+
+      // Construct rotation matrix to align frame transform with the normal vector
+      tf2::Matrix3x3 rot_mat;
+      rot_mat[0] = tf2::Vector3(nx, ny, nz);
+      if (std::abs(nz) < 0.9) {
+        // Vector is not close to vertical, use x and y components to create orthogonal vector
+        rot_mat[1] = tf2::Vector3(-ny, nx, 0);
+      } else {
+        // Vector is close to vertical, use y and z components to make orthogonal vector
+        rot_mat[1] = tf2::Vector3(0, -nz, ny);
+      }
+      // Normalize the generated orthogonal vector, because it is not necessarily unit length
+      rot_mat[1].normalize();
+      // Cross product produces the third basis vector of the rotation matrix
+      rot_mat[2] = rot_mat[0].cross(rot_mat[1]);
+
+      // Extract equivalent quaternion representation for the transform
+      // rot_mat.transpose() is used because the basis vectors should be loaded
+      // into the columns of the matrix, but the indexing in the above commands set the rows
+      //   of the matrix instead of the columns.
+      tf2::Quaternion q;
+      rot_mat.transpose().getRotation(q);
+
+      // Fill orientation of pose structure
+      tf2::convert(q, p.orientation);
+      normals_.poses.push_back(p);
+    }
+    // Publish normal vectors
+    pub_normals_.publish(normals_);
 
     // Euclidean clustering 
     /*
@@ -148,7 +242,7 @@ HockeyShot::HockeyShot(ros::NodeHandle n, ros::NodeHandle pn) : kd_tree_(new pcl
     } 
     
     pub_bbox_.publish(bbox_array_);
-    */
+    
     pcl::IndicesPtr indices (new std::vector <int>);
     pcl::removeNaNFromPointCloud (*passthrough_cloud, *indices);
     
@@ -174,7 +268,7 @@ HockeyShot::HockeyShot(ros::NodeHandle n, ros::NodeHandle pn) : kd_tree_(new pcl
 
     // Publish Passthrough filter PointCloud
     pub_cloud_.publish(filtered_cloud);
-
+    */
   }
 
   void HockeyShot::recvPointsRaw(const sensor_msgs::PointCloud2ConstPtr& msg)
