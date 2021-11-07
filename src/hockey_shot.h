@@ -31,6 +31,12 @@
 #include <geometry_msgs/PoseArray.h>  // Visualize vectors
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
+// Image processing and camera geometry headers
+#include <opencv2/opencv.hpp>
+#include <cv_bridge/cv_bridge.h>
+#include <image_geometry/pinhole_camera_model.h>
+#include <visualization_msgs/MarkerArray.h>
+
 // Namespace matches ROS package name
 namespace hockey_shot{
 
@@ -73,9 +79,8 @@ namespace hockey_shot{
 
     ros::Subscriber sub_points_raw_;
     ros::Subscriber sub_points_colored_;
-    ros::Publisher pub_cloud_;
     ros::Publisher pub_passthrough_cloud_;
-    ros::Publisher pub_bbox_;
+    ros::Publisher pub_color_cloud_;
     ros::Publisher pub_normals_;  // Normal vectors
 
     // KD search tree object for use by PCL functions
@@ -83,10 +88,6 @@ namespace hockey_shot{
 
     // Output messages
     geometry_msgs::PoseArray normals_;
-
-    // Publishing bounding box message
-    avs_lecture_msgs::TrackedObjectArray bbox_array_;
-    int bbox_id_;
 
     /*
 
