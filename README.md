@@ -5,6 +5,8 @@
 
 + This program uses the Xbox 360 Kinect to register how many goals I scored shooting pucks in my basement
 
+![](images/hockey_shot.png)
+
 ## Links
 
 + Main tutorial (using freenect): https://answers.ros.org/question/196455/kinect-installation-and-setup-on-ros-updated/
